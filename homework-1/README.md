@@ -137,6 +137,8 @@ I roughly checked the output to make sure that all runs completed without error.
 
 ![results](https://github.com/yangl1996/os-practical/blob/master/homework-1/attachments/result-sample.png?raw=true "Outputs")
 
+More screenshots available in the [appendix](https://github.com/yangl1996/os-practical/tree/master/homework-1#screenshots-of-experiment-results).
+
 | # Cores | Memory Usage    | Time  |
 | :------------- | :------------- | :------- |
 | 1       | 984MB/1000MB      |   6s     |
