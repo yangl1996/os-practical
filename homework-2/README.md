@@ -56,6 +56,144 @@ Mesos source tree 中还有别的部件辅助 master 和 agent 的运行，如
 
 ## Master 和 Agent 的初始化过程
 
+### Master 的初始化
+
+#### 1 处理命令行参数
+
+`src/master/main.cpp` 的 `main()` 开始先验证并处理传入的选项，从 220 行到 275 行。例如，
+
+```cpp
+if (flags.advertise_port.isSome()) {
+    os::setenv("LIBPROCESS_ADVERTISE_PORT", flags.advertise_port.get());
+  }
+```
+
+就是在从命令行参数中获取 `advertise_port` 选项，并以此设置 `LIBPROCESS_ADVERTISE_PORT` 环境变量的值。我猜测使用环境变量是为了方便在子进程之间共享配置参数。
+
+#### 2 输出 Build 号
+
+在 `stdout` 输出 Mesos master 的 build 信息，如编译时间和本 Mesos 实例的版本号、git tag 和 commit SHA 等。
+
+#### 3 初始化 `Libprocess`
+
+`Libprocess` 是负责 message passing 的库。调用
+
+```cpp
+process::initialize(
+  "master",
+  READWRITE_HTTP_AUTHENTICATION_REALM,
+  READONLY_HTTP_AUTHENTICATION_REALM);
+```
+
+来实现。它理应由 `main()` 初始化，所以若该调用出错，则直接报错退出。
+
+#### 4 初始化日志
+
+调用
+
+```cpp
+logging::initialize(argv[0], flags, true);
+```
+
+实现。初始化完成后，紧接着输出之前的所有 warning 信息。
+
+#### 5 启动 `VersionProcess`
+
+```cpp
+spawn(new VersionProcess(), true);
+```
+
+查看 `VersionProcess` 源码（`src/version/version.cpp`）可以发现，该进程专门处理获取 master 版本信息的请求。
+
+#### 6 启动防火墙
+
+防火墙可以禁用特定的 API endpoint。在这里读取命令行参数中防火墙设置，解析并一一设置禁用的 endpoint。
+
+#### 7 加载模块和匿名模块
+
+从这里开始，将会初始化一系列用于扩展 Mesos 的组建。在本阶段，初始化的是模块和匿名模块。读取命令行参数，并调用 `ModuleManager::load` 加载模块，调用 `ModuleManager::create<Anonymous>(name)` 创建匿名模块。
+
+事实上，之后的 Hook，Allocator 等都需要作为模块先被加载，再被设置使用。因此，这里先加载模块。
+
+#### 8 初始化 Hook
+
+Hook 在 Mesos 的一些关键操作的关键节点中被调用，它的返回值将取代正常流程下的值，被直接用于 Hook 插入点之后的流程。这里通过 `HookManager::initialize(flags.hooks.get())` 获得命令行参数并加载 Hook。
+
+#### 9 初始化 Allocator
+
+```cpp
+const string allocatorName = flags.allocator;
+Try<Allocator*> allocator = Allocator::create(allocatorName);
+```
+
+这里首先从 `flags` 中读取要用的 allocator，再进行加载。通过源码 `src/master/constants.hpp` 和 `src/master/flag.cpp` 可以发现，默认的 allocator 是 HierarchicalDRF。
+
+#### 10 初始化注册信息存储空间
+
+Mesos master 需要维护多个状态信息，需要空间存储。这里根据命令行参数的指定，初始化状态存储空间。首先，若要求保存在内存中，则直接 `storage = new InMemoryStorage();` 新建 `InMemoryStorage` 的实例；若要求存储在文件系统，则新建 working directory；若 master 由 zookeeper 选出，则调用 zookeeper 功能初始化这一存储空间。
+
+#### 11 初始化状态
+
+调用 `State` 类构造函数，初始化一个实例。通过阅读 `include/mesos/state/state.hpp` 中对 `State` 类的定义，可以看出它就是维护了一个数据结构，存储收到的状态信息。
+
+#### 12 初始化注册信息进程
+
+改进程负责提供查询当前注册信息的 API Endpoint。这一进程读取上一步刚初始化的 `State`，向 API Caller 提供只读请求。
+
+#### 13 初始化 Zookeeper 竞争和 Leader 监测
+
+两者分别是 contender 和 detector。前者参与 Zookeeper 中的 leader 竞争，与众多冗余的 master node 竞争成为活跃的 master。后者监测当前的活跃 master。
+
+```cpp
+Try<MasterContender*> contender_ = MasterContender::create(
+      flags.zk, flags.master_contender);
+Try<MasterDetector*> detector_ = MasterDetector::create(
+      flags.zk, flags.master_detector);
+
+```
+
+分别使用这两个函数生成 contender 和 detector 进程。
+
+#### 14 Authorizer 初始化
+
+Authorizer 用于做用户访问控制，例如控制谁可以提交新框架。目前只支持单个 Authorizer，但从源代码
+
+```cpp
+if (authorizerNames.size() > 1) {
+    EXIT(EXIT_FAILURE) << "Multiple authorizers not supported";
+  }
+  string authorizerName = authorizerNames[0];
+```
+
+可以明显看出，是预留支持多个 Authorizers 的。
+
+在 Authorizer 初始化后，把它绑定到 `Libprocess` 上，为它提供鉴权服务。
+
+#### 15 限制 agent 下线速率
+
+这里设置一个 `RateLimiter`，用于限制一定时间内 agent 下线数量，防止大量 agent 同时下线。`RateLimiter` 本身用于设置一个进程发送特定消息的速率（详见 `3rdparty/libprocess/include/process/limiter.hpp`）。
+
+#### 16 初始化 `Master` 对象
+
+通过
+
+```cpp
+Master* master =
+   new Master(
+     allocator.get(),
+     registrar,
+     &files,
+     contender,
+     detector,
+     authorizer_,
+     slaveRemovalLimiter,
+     flags);
+```
+
+将刚才所有阶段生成的对象传入构造函数，获得最终的 `Master` 进程。最后通过 `process::spawn(master);` 开始执行真正的 master 进程。
+
+### Agent 的初始化
+
 
 
 ## Mesos 资源调度算法
