@@ -194,7 +194,28 @@ Master* master =
 
 ### Agent 的初始化
 
+Agent 初始化过程与 master 有不少共通之处，其中从第 1 步到第 8 步都是一样的，此处略过。其他初始化过程较 master 更简单，下面按顺序列举。
 
+* Systemd 状态更新：如果监测到当前 Linux 环境由 Shitstemd 管理，则调用相关函数更新该进程在 Systemd 中的状态。
+* 初始化 Fetcher 和 Containerizer：Fetcher 用于将框架的运行环境先下载到 agent 所在机器。Containerizer 提供容器化的运行环境，实现隔离。
+* 初始化 Master Detector：该进程用于找到 master。
+* 初始化 Authorizer：与 master 类似，略过。
+* 初始化 GC：agent 直接有框架任务运行，需要 GC 回收泄漏的资源。
+* 初始化状态更新进程：该进程不断向 master 汇报当前可用资源等系统状态。
+* 初始化系统资源估计进程：本组件和下一个 QoS 控制组建旨在提高资源利用率。本组件估计框架申请的资源中，有多少是事实闲置的，并把改信息提交给 agent 主进程。
+* 初始化 QoS：上一个组件允许别的任务借用当前暂时闲置（但已经被分配给某框架）的资源。此时要保证真正拥有该资源的框架可以在需要时立即启用这些资源，这需要 QoS 进程监控，在拥有这些资源的框架性能下降时，及时停止借用资源的任务，把这些资源还回去。
+* 创建 Agent 主进程
+
+
+// * Systemd support (if it exists).
+// * Fetcher and Containerizer.
+// * Master detector.
+// * Authorizer.
+// * Garbage collector.
+// * Status update manager.
+// * Resource estimator.
+// * QoS controller.
+// * `Agent` process.
 
 ## Mesos 资源调度算法
 
