@@ -299,3 +299,27 @@ for offer in offers:
 这次实验，使用 `PyMesos`，实现的功能是在每一台 agent 机器上执行指定的命令。这个功能有实际需求，如大规模集群的运维等。虽然已经有 Ansible、Fabric 等工具实现类似功能，但在 Mesos 上实现也很有趣。之后，还可以给框架提供一个前端，通过网页输入命令并启动执行。
 
 测试时，执行的命令是 `touch /root/done && echo hi >> /root/done`。若成功，应当在 `/root` 下出现 `done` 文件，内容为 `hi`。
+
+代码上传在 [`homework-2/source`](https://github.com/yangl1996/os-practical/tree/master/homework-2/source) 目录。这个 framework 只是参考样例代码使用 `PyMesos` 的实现，且没有做异常处理。若有时间，将直接调用 Mesos 的 HTTP API 从 API 调用和处理开始实现。
+
+### 运行截图
+
+#### 任务运行状况
+
+Scheduler 接收到 executor 更新的状态，并输出在 `stdout`。
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-2/attachments/ss1.png?raw=true)
+
+#### 任务效果
+
+任务共执行 5 次，因此 `/root/done` 中有五行输出。
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-2/attachments/ss2.png?raw=true)
+
+#### Mesos 终端
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-2/attachments/ss3.png?raw=true)
+
+#### 资源消耗
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-2/attachments/ss4.png?raw=true)
