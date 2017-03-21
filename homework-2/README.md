@@ -42,12 +42,12 @@ Mesos source tree 中还有别的部件辅助 master 和 agent 的运行，如
 
 ### 与传统操作系统的对比
 
-与传统操作系统__相似__的有，
+与传统操作系统 __相似__ 的有，
 
 * 都涉及资源的监测、分配和调度
 * 都需要处理多个任务共存，资源的合理利用问题
 
-与传统操作系统__不同__的有，
+与传统操作系统 __不同__ 的有，
 
 * 传统操作系统，资源分配的协商只有两步：程序请求和系统同意（或拒绝）；而在 Mesos 上有三步，框架请求、系统提供 offer、框架选择使用（或不使用）
 * 传统操作系统，内核是唯一的资源调度器；Mesos 上事实上有两层调度：Mesos master 将资源划分粗略给各个框架，各个框架自己的 scheduler 将获得的资源划分给要运行的 task
@@ -219,6 +219,40 @@ Agent 初始化过程与 master 有不少共通之处，其中从第 1 步到第
 
 ## Mesos 资源调度算法
 
+在 master 的启动过程的分析中，可以看到默认的调度器是 HierarchicalDRF。继续阅读 `Allocator` 类的定义，可以看到有如下操作
 
+```cpp
+if (name == mesos::internal::master::DEFAULT_ALLOCATOR) {
+  return HierarchicalDRFAllocator::create();
+}
+```
+
+即初始化了一个 `HierarchicalDRFAllocator` 类。于是继续阅读该类相关的源代码（`src/master/allocator/mesos/hierarchical.hpp` 和 `src/master/allocator/mesos/hierarchical.cpp`），可以发现
+
+```cpp
+template <
+  typename RoleSorter,
+  typename FrameworkSorter,
+  typename QuotaRoleSorter>
+class HierarchicalAllocatorProcess;
+
+typedef HierarchicalAllocatorProcess<DRFSorter, DRFSorter, DRFSorter>
+HierarchicalDRFAllocatorProcess;
+typedef MesosAllocator<HierarchicalDRFAllocatorProcess>
+HierarchicalDRFAllocator;
+```
+
+该类只是从一个通用的 `MesosAllocator` 模版类定义出来的一个类。显然，核心的算法是在 `HierarchicalDRFAllocatorProcess` 中实现的。该类是由 `HierarchicalAllocatorProcess` 作为模版定义而来，其中 `RoleSorter`、`FrameworkSorter`、`QuotaRoleSorter` 都使用了 `DRFSorter`。事实上，`HierarchicalAllocatorProcess` 继承自 `MesosAllocatorProcess`，查看其构造函数，可以发现 `DRFSorter` 将被用来初始化 `roleSorter`、`quotaRoleSorter` 和 `frameworkSorterFactory`，是调度算法的核心。
+
+`DRFSorter` 的源代码在 `src/master/allocator/sorter/drf/sorter.cpp`。DRF 维护系统总资源列表、当前已分配给各个框架的资源列表、系统已分配资源列表、每个框架主导资源需求比例（框架主导资源量除以系统该项资源总量）。通过 `DRFSorter` 可以维护、读取这个列表。而 `HierarchicalAllocatorProcess` 处理集群的事件，如新 agent 加入、新 framework 加入等，在遇到对应事件是，调用 `DRFSorter` 的相应方法，对 DRF 各个列表进行更新，相当于是 Mesos 集群与 DRF 算法之间通信的代理。DRF 有 paper 进行详解。
+
+_主导资源_ 定义为某框架需求的资源中，量最大的那种。调度算法从主导资源需求最小的框架开始，一一为这些框架分配资源。
+
+1. 找到主导资源最小的框架
+2. 若当前系统资源可以满足这个框架，则运行；否则等待
+3. 更新各列表
+4. 回到第一步
+
+我认为，这一算法保证了系统资源的高效利用。作为集群管理者，一个合理的预期是集群的资源可以尽量全部发挥作用。最好情况下，每一个框架使用的系统资源是平衡的（如占用 CPU 和 内存都是 1/3），这样系统资源可以全部利用。若一个框架大量占用某项系统资源（如内存），则若先运行它，可能导致剩余的内存不足以运行任何一个别的框架。而从主导资源最小的框架开始启动，保证了这种情况不会发生。
 
 ## 完成一个简单工作的框架
