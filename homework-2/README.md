@@ -257,6 +257,51 @@ _主导资源_ 定义为某框架需求的资源中，量最大的那种。调�
 
 ## 完成一个简单工作的框架
 
+此部分，我先写了个小程序，手动处理一切 API 请求和通信，实现了 scheduler 的注册、事件监听、offer 处理等功能。源代码见 [`homework-2/source/own-impl.py`](https://github.com/yangl1996/os-practical/tree/master/homework-2/source/own-impl.py)。下面介绍其实现。
+
+为实现双向通信（scheduler 与 master），Mesos API 设计中采用了流式 API，类似 twitter 的设计。流式设计相比基于 Webhook 的设计，只需要在 API 服务端设置服务器，使得调用 API 的程序更加轻量，我个人是比较偏好的。但是，这样需要用户维护长连接，也算是弊端。但是在数据中心集群的条件下，这基本不成问题。因此，我个人赞同 Mesos API 的设计。
+
+在流式 API 中，client 首先 subscribe to API endpoint。之后，client 保持连接开启，一直接收 response。每次有 event 发生（如 master 提供新 offer），就向 client 通过这个一直维护的 HTTP response 传输数据。数据格式如下：
+
+```
+<length-of-json-object>\n
+{...}
+```
+
+Event 本身是 `JSON` object。下面是一个例子：
+
+```
+18
+{"this is the": 2}28
+{"chuuo sobu line train": 1}
+```
+
+其中，第一行的 `18` 表示第二行 `JSON` object 的长度，而第二行的 `28` 则表示第三行 `JSON` object 的长度。要实现这样的接收，只需要先读一行，然后 parse 成 int，然后再读这个长度的数据。下面是代码。
+
+```python
+res_len = int(res.raw.readline().decode())
+res_body = res.raw.read(res_len).decode()
+return json.loads(res_body)
+```
+
+返回的就是 `JSON` object。
+
+不断循环这个过程，就实现了对发来的 event 的实时处理。
+
+```python
+while True:
+    event = get_event(req)
+    handle_event(event)
+```
+
+这里，`handle_event(event)` 作为一个 dispatcher，将收到的 event dispatch 给对应的处理函数，如 `on_offers(evt)`，它处理 master 发来的 offer，检查其提供的资源量。若满足需求，则调用 API 表示接受。需要注意的是，接受 offer 作为 client 主动的行为，是传统的 API call。这样的 API call 需要新开一个连接，因为原来的连接一直用于监听 event。在新开连接时，需要在 header 中提供 subscribe 时获得的 Session ID。
+
+下面是这一小程序的运行结果。可以看到，在成功 subscribe 之后，收到了 master 发来的心跳包，然后收到了 offer 并接受，然后又收到了两个心跳包。
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-2/attachments/ss5.png?raw=true)
+
+实现这些时，我仅使用基础的 HTTP 通信库，没有依赖其他任何库。此部分仅为证明我已经充分理解并掌握 Mesos 事件流 API 的处理，Mesos API 的工作原理以及相关编程。从头实现完整的一套 API 库意义不大，而且太过琐碎，所以下面使用豆瓣的 `PyMesos` 库实现一个完整的框架。
+
 ### Scheduler
 
 使用豆瓣的 `PyMesos` 库。库实现了基本的通信，并以 hook 的形式提供用户编程接口。例如
