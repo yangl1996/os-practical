@@ -206,17 +206,6 @@ Agent 初始化过程与 master 有不少共通之处，其中从第 1 步到第
 * 初始化 QoS：上一个组件允许别的任务借用当前暂时闲置（但已经被分配给某框架）的资源。此时要保证真正拥有该资源的框架可以在需要时立即启用这些资源，这需要 QoS 进程监控，在拥有这些资源的框架性能下降时，及时停止借用资源的任务，把这些资源还回去。
 * 创建 Agent 主进程
 
-
-// * Systemd support (if it exists).
-// * Fetcher and Containerizer.
-// * Master detector.
-// * Authorizer.
-// * Garbage collector.
-// * Status update manager.
-// * Resource estimator.
-// * QoS controller.
-// * `Agent` process.
-
 ## Mesos 资源调度算法
 
 在 master 的启动过程的分析中，可以看到默认的调度器是 HierarchicalDRF。继续阅读 `Allocator` 类的定义，可以看到有如下操作
