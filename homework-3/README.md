@@ -95,3 +95,48 @@ sudo apt-get install docker-ce
 `NETWORK` 和 `CONTAINER` 分别表示要把哪个容器 attach 到哪个网络。
 
 用法例子：`docker network connect multi-host-network container1`
+
+### `docker ps`
+
+类似 shell 的 `ps` 命令，列出存在的容器。
+
+提供如下选项（`docker images` 里有过的不列了）：
+
+* `--latest`，只显示最近创建的容器
+* `-n`，列出最近创建的 n 个容器
+* `-s`，列出容器总大小
+
+## 创建 Nginx 镜像
+
+首先写一个 Dockerfile，内容如下
+
+```Dockerfile
+FROM ubuntu:xenial
+RUN apt -y update && apt install -y nginx
+RUN echo 'Lei Yang, 1400012791' > /var/www/html/index.html
+CMD tail -f /var/log/nginx/access.log
+```
+
+主要就是安装，然后往默认页面里写学号和姓名，然后不断输出 log。
+
+然后在当前目录运行
+
+```bash
+sudo docker build -t basic-nginx .
+```
+
+以 build 这个镜像。完成后，镜像就在本地可用了。下面创建网络。
+
+```bash
+sudo docker network create --driver bridge docker-internal
+```
+
+之后执行
+
+```bash
+sudo docker run --network=docker-internal --name=dummy-nginx basic-nginx nginx -g 'daemon off;'
+```
+
+此时 `docker inspect`，可以看到容器在 `docker-internal` 这个 bridge 上的 IP 地址，在我这里的情况是 `172.18.0.2`。查看宿主机网络设备可以看到，出现了 `172.18.0.1` 的网桥。事实上，此时宿主机已经可以访问容器。
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-3/attachments/1.png?raw=true)
