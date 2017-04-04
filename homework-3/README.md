@@ -140,3 +140,29 @@ sudo docker run --network=docker-internal --name=dummy-nginx basic-nginx nginx -
 此时 `docker inspect`，可以看到容器在 `docker-internal` 这个 bridge 上的 IP 地址，在我这里的情况是 `172.18.0.2`。查看宿主机网络设备可以看到，出现了 `172.18.0.1` 的网桥。事实上，此时宿主机已经可以访问容器。
 
 ![ss](https://github.com/yangl1996/os-practical/blob/master/homework-3/attachments/1.png?raw=true)
+
+## Docker 网络
+
+### null
+
+此状态下，容器只有 loopback。
+
+### bridge
+
+Bridge 可以理解为一个交换机或 hub，连接在这个设备上的容器，互相处于同一个子网中，就像多台机器连接在同一个简单交换机上。另外，默认情况下，创建 bridge 时，也会为宿主机创建一个 interface，接在这个 bridge 上，从而实现宿主机与容器之间的网络互通。
+
+### host
+
+Host 模式下，容器直接和宿主机共用所有 interface。宿主机的所有 interface 都可以被容器使用，且具有相同的使用权利。此时容器不再隔离网络，容器退化到类似 `chroot`，只隔离进程空间。
+
+### overlay
+
+Overlay 是为了解决多个宿主机上的容器组网的需求。对容器而言，它看到的只是一个子网，可以直接经由它与不同宿主机上的容器通信。而宿主机的 Docker daemon 负责这个子网的路由，比较像 Linux 的 TUN/TAP，把容器的出入流量封装在普通 IP 数据包中，以此把多个宿主机上的 Docker 容器连起来。
+
+## 分析 Mesos 与 Docker 的交互
+
+`Docker` 类定义在 `docker.hpp` 中。它抽象了整个 Docker daemon，包括 `Container` 和 `Image` 等。查看对应的 C++ 代码可以看到，Mesos 将 Docker CLI 进行了抽象，可以生成对应的命令行参数，并调用 Docker CLI 完成任务。我十分不解的是，Docker daemon 提供了 socket，为何不直接去和 daemon 通信，而还要往 CLI 那里绕一圈，不好维护，这个实现方法也不现代。Docker 好心好意提供了 CLI 和 socket 的松耦合，却不去采用，真当想不零清。
+
+`Run` 函数封装的就是 Docker CLI 的 `docker run` 命令。这个函数做的事情很简单，就是一一检查被调用时的参数，把它们一一翻译成 Docker CLI 的命令行参数，然后分出子进程去执行。代码一步步很清楚，基本上就是一条条选项检查过来。我认为没有一个个说的必要。
+
+##
