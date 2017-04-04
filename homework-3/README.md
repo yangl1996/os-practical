@@ -165,4 +165,39 @@ Overlay 是为了解决多个宿主机上的容器组网的需求。对容器而
 
 `Run` 函数封装的就是 Docker CLI 的 `docker run` 命令。这个函数做的事情很简单，就是一一检查被调用时的参数，把它们一一翻译成 Docker CLI 的命令行参数，然后分出子进程去执行。代码一步步很清楚，基本上就是一条条选项检查过来。我认为没有一个个说的必要。
 
-##
+## 写框架
+
+这次可以重复用上次作业写的框架，而且直接用 Mesos 的 containizer 接口，不用自己写 executor，只需要改一下 scheduler 里的任务信息就行了。新的代码在 [`homework-2/source`](https://github.com/yangl1996/os-practical/tree/master/homework-3/source)。
+
+描述任务的部分改成了
+
+```python
+DockerInfo = Dict()
+DockerInfo.image = 'basic-nginx'
+DockerInfo.network = 'HOST'
+
+ContainerInfo = Dict()
+ContainerInfo.type = 'DOCKER'
+ContainerInfo.docker = DockerInfo
+
+CommandInfo = Dict()
+CommandInfo.shell = False
+CommandInfo.value = 'nginx'
+CommandInfo.arguments = ['-g', 'daemon off;']
+```
+
+这三块提供相当于 `docker run` 的参数。在
+
+```python
+task.container = ContainerInfo
+task.command = CommandInfo
+```
+
+传递给 Mesos Master，而 Master 在发现这个任务是容器任务后，自动选择合适的 containizer executor 执行。因此，在代码中无需处理 executor 相关。
+
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-3/attachments/2.png?raw=true)
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-3/attachments/3.png?raw=true)
+
+![ss](https://github.com/yangl1996/os-practical/blob/master/homework-3/attachments/4.png?raw=true)
