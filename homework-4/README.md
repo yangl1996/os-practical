@@ -131,4 +131,23 @@ node3$ sudo systemctl stop glusterd.service
 
 ## Docker 里挂载 GlusterFS
 
+稍微修改上次作业用的 Dockerfile，在建立时多装一个 `glusterfs-client`。改好是这样的：
+
+```Docker
+FROM ubuntu:xenial
+RUN apt -y update && apt install -y nginx glusterfs-client
+CMD mkdir /gfsmountpoint && mount -t glusterfs 172.16.6.234:/gv0 /gfsmountpoint && cp /gfsmountpoint/index.html /var/www/html/index.html && nginx -g 'daemon off;'
+```
+
+`CMD` 是 `docker run` 时缺省执行的命令，在这里是依次建立挂载点、挂载 GlusterFS、把文件拷到 `www-root`，然后启动 Nginx。
+
+然后启动容器。为了执行挂载命令，需要用 `--privileged` 开启特权模式。
+
+```bash
+sudo docker build -t basic-nginx .
+sudo docker run -p 80:80 --name nginx-instance --privileged -d basic-nginx
+```
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-4/attachments/glusterwebpage.png?raw=true)
+
 ## 用联合文件系统制作 Docker 镜像
