@@ -151,3 +151,83 @@ sudo docker run -p 80:80 --name nginx-instance --privileged -d basic-nginx
 ![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-4/attachments/glusterwebpage.png?raw=true)
 
 ## 用联合文件系统制作 Docker 镜像
+
+Docker 的镜像基于联合文件系统，由一层层叠加起来，最底层是基础的 rootfs（默认是 Alpine Linux 的 rootfs），然后在上面作修改，实现不同功能，然后叠加起来。例如，安装软件包时，对 rootfs 做了修改，这个修改就被存在一层中。在不同镜像之间，可以共享层，例如，机器上有两个基于 Alpine Linux 的镜像，那它们是可以共享最底下 Alpine Linux rootfs 那层的。当从镜像启动一个新的容器时，会在上面再叠加一层，读写就通过这一层进行。
+
+首先新建一个容器，并将其启动，
+
+```bash
+sudo docker create -it --name myalpine alpine /bin/sh
+sudo docker start -i myalpine
+```
+
+查看当前文件系统的各层。本来容器的文件系统的挂载点就是容器的 ID，现在不是了。为确定挂载点，先停止其他所有容器，然后看当前系统所有挂载的 aufs。
+
+```bash
+sudo su -
+df -T | grep aufs
+```
+
+只有一条记录，就是当前跑者的 container。
+
+```
+none                         aufs            18982780 6138856  11856584  35% /var/lib/docker/aufs/mnt/5ffa44145194ae7e175e5b6d1b1990337ab7989bb5ea8054e21effe264536d03
+```
+
+然后就可以看这个 container 文件系统的组成了。
+
+```bash
+cd /var/lib/docker/aufs
+cat layer/5ffa44145194ae7e175e5b6d1b1990337ab7989bb5ea8054e21effe264536d03
+```
+
+可以看到下面还有两层：
+
+```
+5ffa44145194ae7e175e5b6d1b1990337ab7989bb5ea8054e21effe264536d03-init
+ad000efeb87b182ac9651ecd70d84d88ea0a9ce6f7d7263b65cd8f6cf0e08754
+```
+
+`xxx-init` 这一层存放一些配置，例如 `/etc/hostname`；最下面一层就是 Alpine Linux 的 bashimg，把它拷出来。
+
+```bash
+cp -r ad000efeb87b182ac9651ecd70d84d88ea0a9ce6f7d7263b65cd8f6cf0e08754 /home/pkusei/baseimg
+```
+
+然后在 container 里面装点包，
+
+```sh
+apk update
+apk add wget
+```
+
+再把最上面的拷出来。`xxx-init` 不拷无所谓，反正最后新建 container 的时候还会加这么一层。
+
+```bash
+cp -r 5ffa44145194ae7e175e5b6d1b1990337ab7989bb5ea8054e21effe264536d03 /home/pkusei/containerlayer
+```
+
+然后开始把两个 layer 叠起来，
+
+```bash
+mkdir fullimg
+sudo mount -t aufs -o br=/home/pkusei/baseimg=ro:/home/pkusei/containerlayer=ro none /home/pkusei/fullimg
+```
+
+然后把这个文件系统打包，再用 `docker import` 创建新镜像，
+
+```bash
+$ sudo tar -c fulimg > /home/pkusei/fullimg.tar
+$ sudo docker import fullimg.tar
+sha256:b558faa81cbff383be81d7556fbb42aa85ad0d87ea4e3a8bc4f4fa7eb13bee04
+```
+
+最后启动这个镜像，试一试
+
+```bash
+sudo docker run -it b558faa81c /bin/sh
+```
+
+可以发现已经可以用 `wget` 了：
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-4/attachments/createimg.png?raw=true)
