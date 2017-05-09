@@ -102,3 +102,56 @@ Swarm 的模式比较像工作在 L2 的 VPN，它自行设计一个方法，把
 
 ## 6 部署 Jupyter Notebook
 
+本次实验使用两台机器（`mesos3` 和 `mesos2`） 。先部署 Calico。按照项目网站文档，首先安装 etcd。直接下载 build 好的 binary，简单又粗暴。
+
+```bash
+wget https://github.com/coreos/etcd/releases/download/v3.1.7/etcd-v3.1.7-linux-amd64.tar.gz
+tar xf etcd-v3.1.7-linux-amd64.tar.gz
+cd etcd-v3.1.7-linux-amd64
+sudo cp etcd* /usr/local/bin
+```
+
+然后分别启动两台机器上的 etcd，
+
+```bash
+mesos3$ etcd --name mesos3 --initial-advertise-peer-urls http://172.16.6.107:2380\
+--listen-peer-urls http://172.16.6.107:2380\
+--listen-client-urls http://172.16.6.107:2379,http://127.0.0.1:2379\
+--advertise-client-urls http://172.16.6.107:2379\
+--initial-cluster-token mesos\
+--initial-cluster mesos3=http://172.16.6.107:2380,mesos2=http://172.16.6.205:2380\
+--initial-cluster-state new
+mesos2$ etcd --name mesos2 --initial-advertise-peer-urls http://172.16.6.205:2380\
+--listen-peer-urls http://172.16.6.205:2380\
+--listen-client-urls http://172.16.6.205:2379,http://127.0.0.1:2379\
+--advertise-client-urls http://172.16.6.205:2379\
+--initial-cluster-token mesos\
+--initial-cluster mesos3=http://172.16.6.107:2380,mesos2=http://172.16.6.205:2380\
+--initial-cluster-state new
+```
+
+进程会一直运行。从当前的 tmux session detach 即可。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-5/attachments/etcd1.png?raw=true)
+
+然后需要让 docker daemon 使用 etcd。直接去修改 docker 的 systemd service unit，把 systemd 里启动 `dockerd` 的命令改了就行。
+
+```bash
+sudo sed -i '/ExecStart=\/usr\/bin\/dockerd -H fd:\/\//c\ExecStart=\/usr\/bin\/dockerd --cluster-store etcd:\/\/127.0.0.1:2379 -H fd:\/\/' /etc/systemd/system/multi-user.target.wants/docker.service
+sudo systemctl restart docker
+```
+
+接下来安装 Calico CLI tool，
+
+```bash
+sudo wget -O /usr/local/bin/calicoctl http://www.projectcalico.org/builds/calicoctl
+sudo chmod +x /usr/local/bin/calicoctl
+```
+
+然后用它直接启动 Calico。会自动下载需要的 docker image。
+
+```bash
+mesos2$ sudo calicoctl node run --ip 172.16.6.205 --name mesos2
+mesos3$ sudo calicoctl node run --ip 172.16.6.107 --name mesos3
+```
+
