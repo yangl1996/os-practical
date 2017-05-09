@@ -182,7 +182,7 @@ sudo docker pull jupyter/minimal-notebook
 sudo docker pull sickp/alpine-sshd
 ```
 
-最后修改第三次作业的 Scheduler（详见 ![scheduler.py](https://github.com/yangl1996/os-practical/blob/master/homework-5/source/scheduler.py)，改成启动一个 JupyterNotebook container，外加两个 Alpine Linux container。但是 Mesos agent 出现 core dump。查询发现是未解决的 bug。
+最后修改第三次作业的 Scheduler（详见 [scheduler.py](https://github.com/yangl1996/os-practical/blob/master/homework-5/source/scheduler.py)，改成启动一个 JupyterNotebook container，外加两个 Alpine Linux container。但是 Mesos agent 出现 core dump。查询发现是未解决的 bug。
 
 ```
 F0509 17:07:49.982190 57876 slave.cpp:4609] Check failed: resource.has_allocation_info() 
