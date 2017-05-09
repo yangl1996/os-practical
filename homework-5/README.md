@@ -1,6 +1,6 @@
 # 第五次作业
 
-## 描述 Linux 内核对 IP 数据包的处理
+## 1 描述 Linux 内核对 IP 数据包的处理
 
 IP 包从二层设备进入三层之后，在 kernel 内部处理流程中会遇到一些特定位置。在每一个特定位置，kernel 提供一个 hook，以便在这个位置对 IP 包做一些处理，如改动源地址、目标地址、丢弃该包，等等。IP 包每遇到一个 hook，都会被发送给 hook 到这里的程序，让它对 IP 包进行一些处理。下图描述了这些 hook 的位置。这一整个框架叫做 `netfilter`。`iptables` 就是利用了 `netfilter` 框架的一个内核模块及对应的用户空间程序。它 hook 到 kernel 内的这些特定位置，并允许用户控制其在各个位置的处理策略。
 
@@ -26,7 +26,7 @@ IP 包从二层设备进入三层之后，在 kernel 内部处理流程中会遇
 
 除了 `netfilter`，剩下的路由则由 Linux 的路由模块处理，对应的命令行工具著名的有 `iproute2`。在上图的 “forward” 和 “route” 处，会根据当前系统的路由表进行路由，选择发送给本机，还是发送给下一跳。“forward” 处的路由负责收到的 IP 包，“route” 处的路由负责本机生成的 IP 包的路由。这些位置的路由都是根据系统的静态路由表和启用的路由算法去选择下一跳，并要求二层发送。路由表可以通过 `iproute2` 和 `route` 配置。
 
-## 使用 iptables
+## 2 使用 iptables
 
 ### 拒绝来自某一特定 IP 地址的访问
 
@@ -70,7 +70,7 @@ iptables -t filter -A OUTPUT -p icmp --icmp-type 0 -d 172.16.6.205 -j DROP
 
 ![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-5/attachments/iptables4.png?raw=true)
 
-## 解释 Linux 网络设备的工作原理
+## 3 解释 Linux 网络设备的工作原理
 
 ### bridge
 
@@ -85,3 +85,20 @@ Linux 的 vlan 设备可以类比为真实的 VLAN 交换机。vlan 设备的母
 ### veth
 
 相当于一根普通的网线（以及对应的虚拟网卡）。从一端进入的包会从另一端出来。用户对它不能进行配置（因为就是一根普通的网线），但是可以把它 attach 到别的设备上，例如两端分别 attach 一个 bridge 上，这样就连接了这两个 bridge。
+
+## 4 解释 Calico 容器网络中数据收发
+
+Calico 比较像一个对路由表和 Linux 防火墙的高层抽象和配置管理、分发系统。在每一台 container host 上运行的 Felix 负责把下发的配置写入当前系统的路由表和防火墙。etcd 负责存储整个网络拓扑等 metadata，作为各个 Felix 配置信息的来源。另外，Calico 采用 BGP 协议，所以每台 host 上还需要 BGP 客户端，与 peer 之间交换信息。
+
+一个 Workload 要发送数据时，无论它发送的 IP 包目的地是哪里，首先都会发送到 host。由于每一个 container 都会通过某种方式（例如 veth attach 到一个 bridge）连接到 host，都会在三层经过一次 host，Felix 在配置路由表的时候就强行将 container 来的包第一跳设为 host，让 host 决定包后面的去向。事实上，host 会通过 BGP 与 peer 交换信息，然后计算出下一跳。IP 包在 host 之间传递，到达目的地 workload 所在的 host 之后，会被 Linux 再次路由，此时 Felix 配置了该 host 的路由表，使得这个 IP 包被发往目的地 workload 对应的虚拟 interface，这个 IP 包就到达了目的地。
+
+## 5 与别的容器组网解决方案对比（Docker swarm overlay）
+
+Swarm 的模式比较像工作在 L2 的 VPN，它自行设计一个方法，把容器的二层数据帧直接封装在 host 的 IP 包中。容器要发送数据帧时，会在 host 被捕获，然后 host 查看这个数据帧目标的 MAC 地址，并查询映射关系，找到这一 MAC 地址对应的容器的 host。之后，这一数据帧封装进 host 的 iP 包中，并往刚刚查询到的 host 发送。之后的发送完全在物理网络上进行。IP 包到达对面 host 之后，host 检查其内容，发现是 overlay 网络的数据，之后将其打开，并按照 MAC 地址发送给对应的容器。在容器看来，互相之间是完全处于同一个二层网络下的。
+
+它和 Calico 的区别在于，Calico 没有做任何“虚拟化”，container 出来包最多只是被改写目的地等信息，本身没有被二次封装，而是直接在物理网络中被路由；相比，Overlay 相当于在物理网络上通过把数据帧封装进 IP 包中，就像创建了一个集中控制的 VPN 之中的网络。可以预期 Calico 的模式的 overhead 较小，同等条件下性能较好。而 Overlay 由于将 container 的数据直接封装， host 之间的路由完全不会去改动，因此较为灵活，且无需改动 host 的路由表，出错几率小，系统较清晰简单；另外直接在二层虚拟化，允许 container 直接使用依赖二层的服务，例如利用 samba 这类要求同属于同一二层网络的协议。总的来看，Calico 和 Overlay 对于容器网络的实现，分别用类 NAT 和 VPN 的概念。Calico 致力于利用现有协议，通过修改物理网络的路由表，使得容器之间的 IP 包可以准确路由；通过修改 Linux 的防火墙，实现 ACL。Overlay 更像直接用 VPN 将容器之间连接，在物理网络上虚拟出一个网络，容器网络内部的二层、三层数据传输都是和 host 间物理网络完全隔开的。
+
+对于其他实现，Calico 和 Overlay 比较相似，例如都用了分布式键值存储使得网络 metadata 一致且可靠、都提供强大的 ACL 控制、都支持超大规模等。
+
+## 6 部署 Jupyter Notebook
+
