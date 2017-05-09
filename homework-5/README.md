@@ -148,10 +148,58 @@ sudo wget -O /usr/local/bin/calicoctl http://www.projectcalico.org/builds/calico
 sudo chmod +x /usr/local/bin/calicoctl
 ```
 
-然后用它直接启动 Calico。会自动下载需要的 docker image。
+然后用它直接启动 Calico。会自动下载需要的 docker image。让 `calicoctl` 自动 pull docker image 慢的要命还看不到进度，因此先手动 pull 下来。
 
 ```bash
+sudo docker pull quay.io/calico/node:latest
 mesos2$ sudo calicoctl node run --ip 172.16.6.205 --name mesos2
 mesos3$ sudo calicoctl node run --ip 172.16.6.107 --name mesos3
 ```
 
+执行 `calicoctl node status` 可以发现 BGP peer 了。然后添加一个 Calico IP Pool，
+
+```bash
+cat << EOF | calicoctl create -f -
+- apiVersion: v1
+  kind: ipPool
+  metadata: 
+    cidr: 192.0.2.0/24
+EOF
+```
+
+然后基于 Calico 创建一个 Docker network。
+
+```bash
+sudo docker network create --driver calico --ipam-driver calico-ipam --subnet=192.0.2.0/24 calico
+```
+
+在 `mesos3` 上进行此项配置，在 `mesos2` 上执行 `sudo docker network ls`，同样也可以看到名为 `calico` 的 network。这是因为两个 host 共用了 etcd，有关网络的信息可以共享。至此，在不同的 host 上的 Docker container，只要都 attach 到这个叫做 `calico` 的 Docker network，就可以互访，即使它们在不同 host 上。
+
+最后写一个 Scheduler 启动一个带 JupyterNotebook 的 container，和两个可以从这个 container 远程登陆到的 container。container 的 base image 直接从 Docker Hub 上找，并先 pull 到本地，方便等下 Scheduler 创建 container。剩下两个不跑 JupyterNotebook 的 container，为了方便起见，则使用 [sickp/alpine-sshd](https://hub.docker.com/r/sickp/alpine-sshd/) 这个基于 Alpine 加了个 sshd 的 image。root 用户密码为 root，等下可以直接登陆。
+
+```bash
+sudo docker pull jupyter/minimal-notebook
+sudo docker pull sickp/alpine-sshd
+```
+
+最后修改第三次作业的 Scheduler（详见 ![scheduler.py](https://github.com/yangl1996/os-practical/blob/master/homework-5/source/scheduler.py)，改成启动一个 JupyterNotebook container，外加两个 Alpine Linux container。但是 Mesos agent 出现 core dump。查询发现是未解决的 bug。
+
+```
+F0509 17:07:49.982190 57876 slave.cpp:4609] Check failed: resource.has_allocation_info() 
+*** Check failure stack trace: ***
+    @     0x7ff3dd1ef3cd  google::LogMessage::Fail()
+    @     0x7ff3dd1f1180  google::LogMessage::SendToLog()
+    @     0x7ff3dd1eefb3  google::LogMessage::Flush()
+    @     0x7ff3dd1f1ba9  google::LogMessageFatal::~LogMessageFatal()
+    @     0x7ff3dc830cf5  mesos::internal::slave::Slave::getExecutorInfo()
+    @     0x7ff3dc831f76  mesos::internal::slave::Slave::runTask()
+    @     0x7ff3dc87d32c  ProtobufProcess<>::handler4<>()
+    @     0x7ff3dc842c06  std::_Function_handler<>::_M_invoke()
+    @     0x7ff3dc85e75a  ProtobufProcess<>::visit()
+    @     0x7ff3dd161933  process::ProcessManager::resume()
+    @     0x7ff3dd16c537  _ZNSt6thread5_ImplISt12_Bind_simpleIFZN7process14ProcessManager12init_threadsEvEUt_vEEE6_M_runEv
+    @     0x7ff3db3adc80  (unknown)
+    @     0x7ff3daec96ba  start_thread
+    @     0x7ff3dabff82d  (unknown)
+Aborted (core dumped)
+```
