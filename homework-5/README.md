@@ -26,7 +26,7 @@ IP 包从二层设备进入三层之后，在 kernel 内部处理流程中会遇
 
 除了 `netfilter`，剩下的路由则由 Linux 的路由模块处理，对应的命令行工具著名的有 `iproute2`。在上图的 “forward” 和 “route” 处，会根据当前系统的路由表进行路由，选择发送给本机，还是发送给下一跳。“forward” 处的路由负责收到的 IP 包，“route” 处的路由负责本机生成的 IP 包的路由。这些位置的路由都是根据系统的静态路由表和启用的路由算法去选择下一跳，并要求二层发送。路由表可以通过 `iproute2` 和 `route` 配置。
 
-## 使用 `iptables`
+## 使用 iptables
 
 ### 拒绝来自某一特定 IP 地址的访问
 
@@ -71,3 +71,17 @@ iptables -t filter -A OUTPUT -p icmp --icmp-type 0 -d 172.16.6.205 -j DROP
 ![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-5/attachments/iptables4.png?raw=true)
 
 ## 解释 Linux 网络设备的工作原理
+
+### bridge
+
+bridge 就是现实世界中的交换机。各种网络设备都可以 attach 到 bridge，相当于连上交换机。每次有 Ethernet 帧从某网络设备收到，如果它 attach 到了某个 bridge，那 kernel 会把这一帧首先发送给 bridge，然后 bridge 像普通交换机一样，查询内部的 MAC 端口对应，然后把帧转发给对应的设备。
+
+bridge 还隐式地包含一个和本机连接的端口，在本机上就显示为对应的 bridge 网络设备，例如 `bridge0`。在三层上，每一个 attach 到 bridge 的设备都要把 IP 地址“交给” bridge 管理。若 attach 在上面的设备依然拥有地址，网络包就无法进入 kernel 并传给 bridge 了。此时需要 bridge 来响应 ARP 请求，而不是 attach 在上面的设备。
+
+### vlan
+
+Linux 的 vlan 设备可以类比为真实的 VLAN 交换机。vlan 设备的母设备（例如 `eth0`）下面由多个子设备，每个对应一个 VLAN ID，就像把 VLAN 交换机上的端口按照 PVID 成组，每一组对应 vlan 设备的一个子设备。在母设备 `eth0` 收到 Ethernet 数据帧时，它开始检查 VLAN tag。若没有 VLAN tag，则直接从 `eth0` 传递给 kernel 三层。若含有 VLAN tag（例如 3），则传递给 `eth0.3` 接收。从子设备（例如 `eth0.3`）要发送数据时，实际上会从 `eth0` 发出，但发出之前会打上 VLAN tag 3。总的来说，就是给 Linux Ethernet 网络设备增加了收发带 VLAN tag 的 Ethernet 帧的能力，使其能够配合上层带 VLAN 功能的交换机、路由器使用。
+
+### veth
+
+相当于一根普通的网线（以及对应的虚拟网卡）。从一端进入的包会从另一端出来。用户对它不能进行配置（因为就是一根普通的网线），但是可以把它 attach 到别的设备上，例如两端分别 attach 一个 bridge 上，这样就连接了这两个 bridge。
