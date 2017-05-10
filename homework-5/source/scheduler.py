@@ -15,8 +15,6 @@ from addict import Dict
 
 TASK_CPU = 0.1
 TASK_MEM = 128
-EXECUTOR_CPUS = 0.1
-EXECUTOR_MEM = 128
 
 
 class MyScheduler(Scheduler):
@@ -33,7 +31,8 @@ class MyScheduler(Scheduler):
 
 			if offer_cpu < TASK_CPU or offer_mem < TASK_MEM:
 				continue
-			
+
+			print("Accepting offer ", offer_cpu, " ", offer_mem)
 			ip = Dict()
 			hostname = Dict()
 			NetworkInfo = Dict()
@@ -45,7 +44,7 @@ class MyScheduler(Scheduler):
 			if self.started == 0:
 				# ip
 				ip.key = 'ip'
-				ip.value = '192.168.0.100'
+				ip.value = '192.0.2.100'
 				# hostname
 				hostname.key = 'hostname'
 				hostname.value = 'calico-demo-jupyter'
@@ -65,7 +64,7 @@ class MyScheduler(Scheduler):
 			elif self.started == 1:
 				# ip
 				ip.key = 'ip'
-				ip.value = '192.168.0.101'
+				ip.value = '192.0.2.101'
 				# hostname
 				hostname.key = 'hostname'
 				hostname.value = 'calico-demo-box1'
@@ -85,7 +84,7 @@ class MyScheduler(Scheduler):
 			elif self.started == 2:
 				# ip
 				ip.key = 'ip'
-				ip.value = '192.168.0.102'
+				ip.value = '192.0.2.102'
 				# hostname
 				hostname.key = 'hostname'
 				hostname.value = 'calico-demo-box2'
@@ -126,7 +125,7 @@ class MyScheduler(Scheduler):
 		return 0.0
 
 	def statusUpdate(self, driver, update):
-		logging.debug('Task {}: {}'.format(update.task_id.value, update.state))
+		logging.debug('[MSG] Task {}: {}'.format(update.task_id.value, update.state))
 
 
 def main(master):

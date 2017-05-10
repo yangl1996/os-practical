@@ -114,19 +114,19 @@ sudo cp etcd* /usr/local/bin
 然后分别启动两台机器上的 etcd，
 
 ```bash
-mesos3$ etcd --name mesos3 --initial-advertise-peer-urls http://172.16.6.107:2380\
---listen-peer-urls http://172.16.6.107:2380\
---listen-client-urls http://172.16.6.107:2379,http://127.0.0.1:2379\
---advertise-client-urls http://172.16.6.107:2379\
---initial-cluster-token mesos\
---initial-cluster mesos3=http://172.16.6.107:2380,mesos2=http://172.16.6.205:2380\
+mesos3$ etcd --name mesos3 --initial-advertise-peer-urls http://172.16.6.107:2380 \
+--listen-peer-urls http://172.16.6.107:2380 \
+--listen-client-urls http://172.16.6.107:2379,http://127.0.0.1:2379 \
+--advertise-client-urls http://172.16.6.107:2379 \
+--initial-cluster-token mesos \
+--initial-cluster mesos3=http://172.16.6.107:2380,mesos2=http://172.16.6.205:2380 \
 --initial-cluster-state new
-mesos2$ etcd --name mesos2 --initial-advertise-peer-urls http://172.16.6.205:2380\
---listen-peer-urls http://172.16.6.205:2380\
---listen-client-urls http://172.16.6.205:2379,http://127.0.0.1:2379\
---advertise-client-urls http://172.16.6.205:2379\
---initial-cluster-token mesos\
---initial-cluster mesos3=http://172.16.6.107:2380,mesos2=http://172.16.6.205:2380\
+mesos2$ etcd --name mesos2 --initial-advertise-peer-urls http://172.16.6.205:2380 \
+--listen-peer-urls http://172.16.6.205:2380 \
+--listen-client-urls http://172.16.6.205:2379,http://127.0.0.1:2379 \
+--advertise-client-urls http://172.16.6.205:2379 \
+--initial-cluster-token mesos \
+--initial-cluster mesos3=http://172.16.6.107:2380,mesos2=http://172.16.6.205:2380 \
 --initial-cluster-state new
 ```
 
@@ -182,7 +182,7 @@ sudo docker pull jupyter/minimal-notebook
 sudo docker pull sickp/alpine-sshd
 ```
 
-最后修改第三次作业的 Scheduler（详见 [scheduler.py](https://github.com/yangl1996/os-practical/blob/master/homework-5/source/scheduler.py)，改成启动一个 JupyterNotebook container，外加两个 Alpine Linux container。但是 Mesos agent 出现 core dump。查询发现是未解决的 bug。
+最后修改第三次作业的 Scheduler（源文件见 [scheduler.py](https://github.com/yangl1996/os-practical/blob/master/homework-5/source/scheduler.py)），改成启动一个 JupyterNotebook container，外加两个 Alpine Linux container。但是 Mesos agent 出现 core dump。查询发现是已确认的 bug，在 1.2.0 中才被修复，因此换用 1.2.0。
 
 ```
 F0509 17:07:49.982190 57876 slave.cpp:4609] Check failed: resource.has_allocation_info() 
@@ -203,3 +203,53 @@ F0509 17:07:49.982190 57876 slave.cpp:4609] Check failed: resource.has_allocatio
     @     0x7ff3dabff82d  (unknown)
 Aborted (core dumped)
 ```
+
+换用 1.2.0 之后可以正常启动。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-5/attachments/jupyter1.png?raw=true)
+
+最后用 Nginx 做一个反向代理，把 `192.0.2.100:8888` 代理到 `0.0.0.0:80` 即可。Nginx 配置文件如下，
+
+```nginx
+server {
+    listen       0.0.0.0:80;
+ 
+    root   /usr/share/nginx/html;
+    index  index.html index.htm;
+ 
+    location / {
+     proxy_pass  http://192.0.2.100:8888;
+     proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+     proxy_redirect off;
+     proxy_buffering off;
+     proxy_set_header        Host            $host;
+     proxy_set_header        X-Real-IP       $remote_addr;
+     proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
+   }
+}
+```
+
+最后把这台机器的 80 端口转发到公网 IP 的 8888 端口。接下来查看 JupyterNotebook 启动时输出到 stdout 的 log（通过 `sudo docker logs 94384b69b3c0`），得到其 token 为 `d0143ff97db79821e583205a9e64ad41f36f16d94cf5e83d`。这个 token 在登录时用于鉴定。尝试打开 [terminal](http://162.105.174.28:8888/terminals/1)，但是发现 WebSocket 连不上，估计是 Nginx 不支持 WebSocket。所以还是用回 `configurable-http-proxy`。
+
+```bash
+sudo configurable-http-proxy --default-target=http://192.0.2.100:8888 --port=80
+```
+
+现在已经可以正常访问 terminal 了。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-5/attachments/jupyter2.png?raw=true)
+
+结果发现 JupyterNotebook 的 base image 里没有 ssh client。要让这个 container 连外网，并 grant sudo 需要修改 Scheduler，用不同参数重新启动这些 container，比较麻烦，因此考虑直接编译一个静态链接的 DropBear SSH client，然后拷进 container。
+
+```bash
+wget https://matt.ucc.asn.au/dropbear/releases/dropbear-2016.74.tar.bz2
+tar xf dropbear-2016.74.tar.bz2
+cd dropbear-2016.74
+./configure
+make STATIC=1
+sudo docker cp ./dbclient 94384b69b3c0:/bin
+```
+
+现在已经可以在 termial 里正常使用 ssh client 了（命令为 `dbclient`）。可以正常连接另外两个 container，如下图。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-5/attachments/jupyter3.png?raw=true)
