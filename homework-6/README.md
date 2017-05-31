@@ -161,3 +161,33 @@ sudo docker run -it --net calico --ip 192.0.2.100 -v /home/pkusei/gfsmount:/root
 ```
 
 运行 Framework，可以发现功能、容错正常。
+
+### 效果
+
+#### Master 自动恢复
+
+把原来是 Master 的机器 shutdown，在 TTL 过后，会自动在别的机器上启动 JupyterNotebook。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-6/attachments/master-relocate.png?raw=true)
+
+#### hosts 自动 populate
+
+`/etc/hosts` 会自动填充，并在有机器意外退出后刷新，保证 hostname 序号连续，并只包含可用的机器。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-6/attachments/hosts.png?raw=true)
+
+下图是在一个节点挂掉之后。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-6/attachments/hosts-after-fail.png?raw=true)
+
+#### 免密码登录
+
+机器之间可以免密码登录。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-6/attachments/pwdless-login.png?raw=true)
+
+#### 分布式文件系统
+
+`/etc/sharedfiles` 是共享的分布式文件系统，它除了用于分发公钥，还可以用于一般的存储。
+
+![gluster1](https://github.com/yangl1996/os-practical/blob/master/homework-6/attachments/sharedfile.png?raw=true)
