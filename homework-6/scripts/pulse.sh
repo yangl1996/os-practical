@@ -4,7 +4,6 @@ sh /root/scripts/first.sh
 while :
 do
     etcdctl set --ttl 60 -- $myip 'isAlive'
-    etcdctl member list | grep "name=$myip.*isLeader=true"
     echo '127.0.0.1 localhost' > /etc/hosts
     peerindex=0
     etcdctl ls --sort / | sed 's/^.\{1\}//g' | while read -r peer ;
@@ -12,6 +11,7 @@ do
         echo "$peer node$peerindex" >> /etc/hosts
         peerindex=`expr $peerindex + 1`
     done
+    etcdctl member list | grep "name=$myip.*isLeader=true"
     if [ $? -eq 0 ]; then
         # is leader
         netstat -nlp | grep 8888
