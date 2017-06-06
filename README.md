@@ -1,5 +1,3 @@
 # OS Practicum
 
-## Spring 2017, Peking University
-
-
+Homework of OS Practicum at Peking University, Spring 2017.
