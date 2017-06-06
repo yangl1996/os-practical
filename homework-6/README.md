@@ -20,6 +20,29 @@ Proposer 选择一个提案编号 n，这个编号 n 大于它之前使用过的
 
 ## Raft 协议
 
+场景：有五个节点（A、B、C、D、E）的系统，运行 Raft 协议。初始状态没有任何 leader。
+
+```
+Lengend
+----------------------------------
+(X)	Pending change X
+_X	Committed change X
+X*	Leader with committed change X
+----------------------------------
+
+时间	A	B	C	D	E	事件
+0						A Elect Timer 时间到，发送 Election 请求
+1	*					A 收到半数以上 vote，当上 leader
+2	_X*					A 收到客户端更新请求（X）
+3	_X*	_X	_X	_X	_X	A 把这一请求转发给其他节点
+4	X*	_X	_X	_X	_X	A 收到半数以上节点的确认，将改动 commit
+5	X*	X	X	X	X	A 要求其他节点也 commit
+6	_Y*	X	X	X	X	A 收到请求（Y）
+7	_Y*	_Y	X	X	X	A 把这一请求转发给其他节点，此时 AB 和 CDE 分开
+8 	_Y*	_Y	X	X	X	A 始终无法 commit 改动，因为没有收到半数以上确认
+9	_Y*	_Y	_Y	_Y	_Y	网络恢复，A 的改动请求被 CDE 收到
+10	Y*	_Y	_Y	_Y	_Y	收到半数以上的确认，A 将改动 commit
+```
 ## Mesos 的容错机制
 
 ## 综合作业
