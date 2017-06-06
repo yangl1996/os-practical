@@ -2,6 +2,22 @@
 
 ## Paxos 算法
 
+Paxos 算法中规定了如下三个角色：Proposer、Acceptor 和 Learner。Proposer 可以提出提案，包含提案编号和对应的 value。Acceptor 收到之后可以 accept 提案，若提案得到多数 acceptor 通过，该提案就被批准，learner 会学习被批准的提案。Paxos 算法的一次运行中，仅通过一个提案。
+
+算法运行分成两个阶段：准备阶段和批准阶段。
+
+### 准备阶段
+
+Proposer 选择一个提案编号 n，这个编号 n 大于它之前使用过的所有编号。然后 proposer 给 acceptor 中半数以上的人发送准备请求。
+
+对于每一个 acceptor，如果收到的请求的提案编号 n 大于之前收到的所有提案编号，那该 acceptor 将返回一个信息，承诺之后会拒绝所有编号小于 n 的提案。同时，acceptor 还将返回之前接受过的提案的编号和对应的值。
+
+### 批准阶段
+
+如果 proposer 收到了足够多的承诺，他需要给这个提案设置一个值。如果有 acceptor 告诉 proposer 曾经的提案编号和对应的值，那他需要从中选取提案编号最大的对应的那个值，然后设置成自己的提案的值。如果没有之前的提案，那 proposer 可以自由设置值。之后，proposer 会把这个值发送给半数以上的 acceptor。
+
+对于每一个 acceptor，如果他之前没有对更大的提案编号做过承诺，那他将向 proposer 和所有 learner 发送“接受”。如果一个 proposer 收到超过半数的接受信息，那说明这个提案被接受了。同时，当一个 learner 收到超过半数的接受信息，它也将更新自己这边对应的值。
+
 ## Raft 协议
 
 ## Mesos 的容错机制
