@@ -45,6 +45,24 @@ X*	Leader with committed change X
 ```
 ## Mesos 的容错机制
 
+Mesos 的 single-point-of-failure 是 master 节点。一旦 master 节点失效，之后就无法进行 resource allocation，框架就无法开始新的 job 了。因此，有必要确保 master 的高可用性，在一个 master 下线的时候自动起一个新的 master，并自动配置 worker，让它们自动和这个新的 master 联系。
+
+Mesos 目前支持使用 ZooKeeper 自动选举 master 并通知整个集群当前 master 节点的地址（基于 etcd 的选项正在开发中）。下面将配置 Mesos 使用 ZooKeeper，并搭建 ZooKeeper Cluster 和 Mesos Cluster。
+
+首先给每个节点配置 unique 的 ZooKeeper Node ID。
+
+```bash
+echo 1 > /etc/zookeeper/conf/myid
+echo 'server.1=172.16.6.107:2888:3888' >> /etc/zookeeper/conf/zoo.cfg
+echo 'server.2=172.16.6.205:2888:3888' >> /etc/zookeeper/conf/zoo.cfg
+echo 'zk://172.16.6.107:2181,172.16.6.205:2181/mesos' > /etc/mesos/zk
+echo 1 > /etc/mesos-master/quorum
+echo 172.16.6.107 > /etc/mesos-master/ip
+cp /etc/mesos-master/ip /etc/mesos-master/hostname
+```
+
+然后启动服务。但是 ZooKeeper 的 systemd unit 貌似没有用。结合上一次被 Mesosphere 坑得 dpkg 的 database 都炸了的经历，可以看出这些 __bloatware__ 的打包质量都极差。最后在前台启动 ZooKeeper 发现它报了个 Error，然而无论是他给的脚本还是 systemd unit 都完全看不出迹象，都报告正常启动。在尝试胡乱安装 JDK 之后，我放弃了 Ubuntu。最后在两台 Arch 虚拟机上成功配置。在关掉一台之后，另一台会自动起来，之后查询 ZooKeeper 都会导向新的这一台，实现了高可用。
+
 ## 综合作业
 
 ### 搭建 Calico 容器网络
